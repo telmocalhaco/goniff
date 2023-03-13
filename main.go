@@ -13,7 +13,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	sniffer.Sniff(os.Args[1], func(ip string, port int, country string, ptr string) bool {
+	sniffer.Sniff(os.Args[1], func(ip string, port int, country string) bool {
 		return country != "PT"
+	}, func(packet sniffer.GoniffPacket) {
+		fmt.Println(packet)
 	})
 }

@@ -1,7 +1,6 @@
 package sniffer
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -12,17 +11,23 @@ import (
 	"github.com/oschwald/geoip2-golang"
 )
 
-type processFilter func(string, int, string, string) bool
+type processFilter func(string, int, string) bool
+type mainProcess func(GoniffPacket)
+
+type GoniffPacket struct {
+	ip        string
+	port      int
+	country   string
+	ptr       string
+	direction string
+}
 
 var filterg processFilter
+var maing mainProcess
 
-func Sniff(network_interface string, filterp processFilter) {
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: ", network_interface, "interface")
-		os.Exit(1)
-	}
-
+func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
 	filterg = filterp
+	maing = mainp
 
 	db, err := geoip2.Open("./databases/GeoLite2-Country.mmdb")
 	_ = err
@@ -42,12 +47,12 @@ func Sniff(network_interface string, filterp processFilter) {
 
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
+		ipLayer := packet.Layer(layers.LayerTypeIPv4)
 		switch packet.TransportLayer().LayerType() {
 		case layers.LayerTypeTCP:
 			tcpLayer := packet.Layer(layers.LayerTypeTCP)
 			if tcpLayer != nil {
 				tcp, _ := tcpLayer.(*layers.TCP)
-				ipLayer := packet.Layer(layers.LayerTypeIPv4)
 				if ipLayer != nil {
 					ip, _ := ipLayer.(*layers.IPv4)
 					go processPacketTCP(db, ip, tcp)
@@ -57,7 +62,6 @@ func Sniff(network_interface string, filterp processFilter) {
 			udpLayer := packet.Layer(layers.LayerTypeUDP)
 			if udpLayer != nil {
 				udp, _ := udpLayer.(*layers.UDP)
-				ipLayer := packet.Layer(layers.LayerTypeIPv4)
 				if ipLayer != nil {
 					ip, _ := ipLayer.(*layers.IPv4)
 					go processPacketUDP(db, ip, udp)
@@ -70,15 +74,13 @@ func Sniff(network_interface string, filterp processFilter) {
 func processPacketTCP(db *geoip2.Reader, ip *layers.IPv4, tcp *layers.TCP) {
 	src := processIP(db, ip.SrcIP, int(tcp.SrcPort))
 	dst := processIP(db, ip.DstIP, int(tcp.DstPort))
-	direction := "IN"
-	if src == "" {
-		direction = "OUT"
-	}
-	if src != "" || dst != "" {
-		if direction == "IN" {
-			fmt.Printf("(IN SOURCE) (TCP) PACKET: %s\n", src)
+	if src != nil || dst != nil {
+		if src == nil {
+			(*dst).direction = "OUT"
+			maing(*dst)
 		} else {
-			fmt.Printf("(OUT DESTINATION) (TCP) PACKET: %s\n", dst)
+			(*src).direction = "OUT"
+			maing(*src)
 		}
 	}
 }
@@ -86,20 +88,18 @@ func processPacketTCP(db *geoip2.Reader, ip *layers.IPv4, tcp *layers.TCP) {
 func processPacketUDP(db *geoip2.Reader, ip *layers.IPv4, udp *layers.UDP) {
 	src := processIP(db, ip.SrcIP, int(udp.SrcPort))
 	dst := processIP(db, ip.DstIP, int(udp.DstPort))
-	direction := "IN"
-	if src == "" {
-		direction = "OUT"
-	}
-	if src != "" || dst != "" {
-		if direction == "IN" {
-			fmt.Printf("(IN SOURCE) (UDP) PACKET: %s\n", src)
+	if src != nil || dst != nil {
+		if src == nil {
+			(*dst).direction = "OUT"
+			maing(*dst)
 		} else {
-			fmt.Printf("(OUT DESTINATION) (UDP) PACKET: %s\n", dst)
+			(*src).direction = "IN"
+			maing(*src)
 		}
 	}
 }
 
-func processIP(db *geoip2.Reader, ip net.IP, port int) string {
+func processIP(db *geoip2.Reader, ip net.IP, port int) *GoniffPacket {
 	if !isPrivateIP(ip) {
 		record, err := db.City(ip)
 		country := "Unknown"
@@ -109,12 +109,16 @@ func processIP(db *geoip2.Reader, ip net.IP, port int) string {
 
 		country = record.Country.IsoCode
 
-		ptr := resolveDNSName(ip)
-		if filterg(ip.String(), port, country, ptr) {
-			return fmt.Sprintf("%s:%d, %s, %s", ip, port, ptr, country)
+		if filterg(ip.String(), port, country) {
+			return &GoniffPacket{
+				ip:      ip.String(),
+				port:    port,
+				country: country,
+				ptr:     resolveDNSName(ip),
+			}
 		}
 	}
-	return ""
+	return nil
 }
 
 func isPrivateIP(ip net.IP) bool {
