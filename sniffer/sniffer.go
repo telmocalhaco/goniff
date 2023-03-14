@@ -132,41 +132,37 @@ func processPacketUDP(ip *layers.IPv4, udp *layers.UDP) {
 
 func processIP(ip net.IP, port int) *GoniffPacket {
 	if !isPrivateIP(ip) {
-		country := "Unknown"
-		ptr := ""
 		populate := false
-		ASN := ""
-		ORG := ""
+
+		pkt := GoniffPacket{
+			ip:      ip.String(),
+			port:    port,
+			country: "Unknown",
+			ptr:     "",
+			ASN:     "",
+			ORG:     "",
+		}
 
 		aux, err := GetPacket(ip.String())
 		if err == nil {
-			country = aux["country"]
-			ptr = aux["ptr"]
-			ASN = aux["ASN"]
-			ORG = aux["ORG"]
+			pkt.country = aux["country"]
+			pkt.ptr = aux["ptr"]
+			pkt.ASN = aux["ASN"]
+			pkt.ORG = aux["ORG"]
 		}
 
-		if country == "Unknown" || country == "" {
+		if pkt.country == "Unknown" || pkt.country == "" {
 			populate = true
 			aux := lookupDB(db, ip)
-			country = aux["country"]
-			ASN = aux["ASN"]
-			ORG = aux["ORG"]
+			pkt.country = aux["country"]
+			pkt.ASN = aux["ASN"]
+			pkt.ORG = aux["ORG"]
 		}
 
-		if filterg(ip.String(), port, country) {
-			if ptr == "" {
+		if filterg(ip.String(), port, pkt.country) {
+			if pkt.ptr == "" {
 				populate = true
-				ptr = resolveDNSName(ip)
-			}
-
-			pkt := GoniffPacket{
-				ip:      ip.String(),
-				port:    port,
-				country: country,
-				ptr:     ptr,
-				ASN:     ASN,
-				ORG:     ORG,
+				pkt.ptr = resolveDNSName(ip)
 			}
 
 			if populate {
