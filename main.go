@@ -13,6 +13,10 @@ func process(packet sniffer.GoniffPacket) {
 	fmt.Println(packet)
 }
 
+func init() {
+	helper.LoadENVFile()
+}
+
 func main() {
 
 	if len(os.Args) < 2 {

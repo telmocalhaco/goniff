@@ -35,18 +35,46 @@ var maing mainProcess
 var db *geoip2.Reader
 var db2 *geoip2.Reader
 
+var DB_ContryFileS = "./databases/GeoLite2-Country.mmdb"
+var DB_ASNFileS = "./databases/GeoLite2-ASN.mmdb"
+
+// loadASNFile load the ASN database file
+func loadASNFile() string {
+	DB_ASNFile := DB_ASNFileS
+	if len(os.Getenv("DB_GEOLITE_ASN")) > 0 {
+		DB_ASNFile = os.Getenv("DB_GEOLITE_ASN")
+	}
+
+	return DB_ASNFile
+}
+
+// loadContryFile load the country database file
+func loadContryFile() string {
+	DB_ContryFile := DB_ContryFileS
+	if len(os.Getenv("DB_GEOLITE_CONTRY")) > 0 {
+		DB_ContryFile = os.Getenv("DB_GEOLITE_CONTRY")
+	}
+	return DB_ContryFile
+}
+
 func Sniff(network_interface string, mainp mainProcess) {
 	CacheInit(false)
 
 	maing = mainp
 
-	dbi, err := geoip2.Open("./databases/GeoLite2-Country.mmdb")
-	_ = err
+	dbi, err := geoip2.Open(loadContryFile())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	db = dbi
 	defer dbi.Close()
 
-	db2i, err := geoip2.Open("./databases/GeoLite2-ASN.mmdb")
-	_ = err
+	db2i, err := geoip2.Open(loadASNFile())
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	db2 = db2i
 	defer db2i.Close()
 
