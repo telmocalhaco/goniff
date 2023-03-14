@@ -6,6 +6,7 @@ import (
 )
 
 func PrintInterfaces() {
+
 	infs, _ := net.Interfaces()
 
 	for _, f := range infs {

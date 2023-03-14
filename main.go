@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"apocas/goniff/helper"
 	"apocas/goniff/sniffer"
@@ -17,7 +18,9 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("No interface was supplied, please select on of the list below: \n")
 
-		helper.PrintInterfaces()
+		if runtime.GOOS == "linux" {
+			helper.PrintInterfaces()
+		}
 
 		fmt.Println("\n Usage interface as ARG, EX: goniff eth0 \n")
 		os.Exit(0)
