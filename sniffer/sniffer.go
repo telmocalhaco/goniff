@@ -88,7 +88,7 @@ func Sniff(network_interface string, mainp mainProcess) {
 
 func lookupDB(db *geoip2.Reader, ip net.IP) map[string]string {
 	output := map[string]string{
-		"country": "Unknown",
+		"country": "",
 	}
 
 	record, err := db.Country(ip)
@@ -123,7 +123,7 @@ func processIP(ip net.IP, port int) *GoniffAddress {
 	addr := GoniffAddress{
 		ip:      ip.String(),
 		port:    port,
-		country: "Unknown",
+		country: "",
 		ptr:     "",
 		ASN:     "",
 		ORG:     "",
@@ -143,7 +143,7 @@ func processIP(ip net.IP, port int) *GoniffAddress {
 			addr.ORG = cachedp["ORG"]
 		}
 
-		if addr.country == "Unknown" || addr.country == "" {
+		if addr.country == "" {
 			populate = true
 			cachedp := lookupDB(db, ip)
 			addr.country = cachedp["country"]
