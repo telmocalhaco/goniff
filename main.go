@@ -7,10 +7,6 @@ import (
 	"apocas/goniff/sniffer"
 )
 
-func filter(ip string, port int, country string) bool {
-	return country != "PT"
-}
-
 func process(packet sniffer.GoniffPacket) {
 	fmt.Println(packet)
 }
@@ -21,5 +17,5 @@ func main() {
 		os.Exit(1)
 	}
 
-	sniffer.Sniff(os.Args[1], filter, process)
+	sniffer.Sniff(os.Args[1], process)
 }

@@ -40,7 +40,7 @@ func GetPacket(address string) (map[string]string, error) {
 	}
 }
 
-func SetPacket(packet GoniffPacket) {
+func SetPacket(packet GoniffAddress) {
 	if isredis {
 		rdb.HSet(ctx, packet.ip, "country", packet.country)
 		rdb.HSet(ctx, packet.ip, "ptr", packet.ptr)

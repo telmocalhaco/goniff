@@ -12,29 +12,32 @@ import (
 	"github.com/oschwald/geoip2-golang"
 )
 
-type processFilter func(string, int, string) bool
 type mainProcess func(GoniffPacket)
 
-type GoniffPacket struct {
-	ip        string
-	port      int
-	country   string
-	ptr       string
-	ASN       string
-	ORG       string
-	direction string
+type GoniffAddress struct {
+	ip      string
+	port    int
+	country string
+	ptr     string
+	ASN     string
+	ORG     string
+	typea   string
 }
 
-var filterg processFilter
+type GoniffPacket struct {
+	src          GoniffAddress
+	dst          GoniffAddress
+	transmission string
+}
+
 var maing mainProcess
 
 var db *geoip2.Reader
 var db2 *geoip2.Reader
 
-func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
+func Sniff(network_interface string, mainp mainProcess) {
 	CacheInit(false)
 
-	filterg = filterp
 	maing = mainp
 
 	dbi, err := geoip2.Open("./databases/GeoLite2-Country.mmdb")
@@ -105,74 +108,60 @@ func lookupDB(db *geoip2.Reader, ip net.IP) map[string]string {
 func processPacketTCP(ip *layers.IPv4, tcp *layers.TCP) {
 	src := processIP(ip.SrcIP, int(tcp.SrcPort))
 	dst := processIP(ip.DstIP, int(tcp.DstPort))
-	if src != nil || dst != nil {
-		if src == nil {
-			(*dst).direction = "OUT"
-			maing(*dst)
-		} else {
-			(*src).direction = "OUT"
-			maing(*src)
-		}
-	}
+	pkt := GoniffPacket{src: *src, dst: *dst, transmission: "TCP"}
+	maing(pkt)
 }
 
 func processPacketUDP(ip *layers.IPv4, udp *layers.UDP) {
 	src := processIP(ip.SrcIP, int(udp.SrcPort))
 	dst := processIP(ip.DstIP, int(udp.DstPort))
-	if src != nil || dst != nil {
-		if src == nil {
-			(*dst).direction = "OUT"
-			maing(*dst)
-		} else {
-			(*src).direction = "IN"
-			maing(*src)
-		}
-	}
+	pkt := GoniffPacket{src: *src, dst: *dst, transmission: "UDP"}
+	maing(pkt)
 }
 
-func processIP(ip net.IP, port int) *GoniffPacket {
+func processIP(ip net.IP, port int) *GoniffAddress {
+	addr := GoniffAddress{
+		ip:      ip.String(),
+		port:    port,
+		country: "Unknown",
+		ptr:     "",
+		ASN:     "",
+		ORG:     "",
+		typea:   "private",
+	}
+
 	if !isPrivateIP(ip) {
 		populate := false
 
-		pkt := GoniffPacket{
-			ip:      ip.String(),
-			port:    port,
-			country: "Unknown",
-			ptr:     "",
-			ASN:     "",
-			ORG:     "",
-		}
+		addr.typea = "public"
 
-		aux, err := GetPacket(ip.String())
+		cachedp, err := GetPacket(ip.String())
 		if err == nil {
-			pkt.country = aux["country"]
-			pkt.ptr = aux["ptr"]
-			pkt.ASN = aux["ASN"]
-			pkt.ORG = aux["ORG"]
+			addr.country = cachedp["country"]
+			addr.ptr = cachedp["ptr"]
+			addr.ASN = cachedp["ASN"]
+			addr.ORG = cachedp["ORG"]
 		}
 
-		if pkt.country == "Unknown" || pkt.country == "" {
+		if addr.country == "Unknown" || addr.country == "" {
 			populate = true
-			aux := lookupDB(db, ip)
-			pkt.country = aux["country"]
-			pkt.ASN = aux["ASN"]
-			pkt.ORG = aux["ORG"]
+			cachedp := lookupDB(db, ip)
+			addr.country = cachedp["country"]
+			addr.ASN = cachedp["ASN"]
+			addr.ORG = cachedp["ORG"]
 		}
 
-		if filterg(ip.String(), port, pkt.country) {
-			if pkt.ptr == "" {
-				populate = true
-				pkt.ptr = resolveDNSName(ip)
-			}
+		if addr.ptr == "" {
+			populate = true
+			addr.ptr = resolveDNSName(ip)
+		}
 
-			if populate {
-				SetPacket(pkt)
-			}
-
-			return &pkt
+		if populate {
+			SetPacket(addr)
 		}
 	}
-	return nil
+
+	return &addr
 }
 
 func isPrivateIP(ip net.IP) bool {
