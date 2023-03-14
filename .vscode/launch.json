@@ -5,6 +5,7 @@
   "version": "0.2.0",
   "debugAdapter": "dlv-dap",
   "configurations": [
+
     {
       "name": "Launch",
       "type": "go",
@@ -12,7 +13,7 @@
       "mode": "auto",
       "program": "${workspaceRoot}/main.go",
       "env": {},
-      "args": ["en0"],
+      "args": ["eno1"],
       "asRoot": true,
       "console": "integratedTerminal",
   }
