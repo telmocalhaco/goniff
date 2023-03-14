@@ -26,12 +26,18 @@ var filterg processFilter
 var maing mainProcess
 
 func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
+	CacheInit(false)
+
 	filterg = filterp
 	maing = mainp
 
 	db, err := geoip2.Open("./databases/GeoLite2-Country.mmdb")
 	_ = err
 	defer db.Close()
+
+	db2, err := geoip2.Open("./databases/GeoLite2-ASN.mmdb")
+	_ = err
+	defer db2.Close()
 
 	handle, err := pcap.OpenLive(os.Args[1], 65536, true, pcap.BlockForever)
 	if err != nil {
@@ -48,21 +54,19 @@ func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 	for packet := range packetSource.Packets() {
 		ipLayer := packet.Layer(layers.LayerTypeIPv4)
-		switch packet.TransportLayer().LayerType() {
-		case layers.LayerTypeTCP:
-			tcpLayer := packet.Layer(layers.LayerTypeTCP)
-			if tcpLayer != nil {
-				tcp, _ := tcpLayer.(*layers.TCP)
-				if ipLayer != nil {
+		if ipLayer != nil {
+			switch packet.TransportLayer().LayerType() {
+			case layers.LayerTypeTCP:
+				tcpLayer := packet.Layer(layers.LayerTypeTCP)
+				if tcpLayer != nil {
+					tcp, _ := tcpLayer.(*layers.TCP)
 					ip, _ := ipLayer.(*layers.IPv4)
 					go processPacketTCP(db, ip, tcp)
 				}
-			}
-		case layers.LayerTypeUDP:
-			udpLayer := packet.Layer(layers.LayerTypeUDP)
-			if udpLayer != nil {
-				udp, _ := udpLayer.(*layers.UDP)
-				if ipLayer != nil {
+			case layers.LayerTypeUDP:
+				udpLayer := packet.Layer(layers.LayerTypeUDP)
+				if udpLayer != nil {
+					udp, _ := udpLayer.(*layers.UDP)
 					ip, _ := ipLayer.(*layers.IPv4)
 					go processPacketUDP(db, ip, udp)
 				}
@@ -101,21 +105,42 @@ func processPacketUDP(db *geoip2.Reader, ip *layers.IPv4, udp *layers.UDP) {
 
 func processIP(db *geoip2.Reader, ip net.IP, port int) *GoniffPacket {
 	if !isPrivateIP(ip) {
-		record, err := db.City(ip)
 		country := "Unknown"
-		if err != nil {
-			_ = err
+		ptr := ""
+		populate := false
+
+		aux, err := GetPacket(ip.String())
+		if err == nil {
+			country = aux["country"]
+			ptr = aux["ptr"]
 		}
 
-		country = record.Country.IsoCode
+		if country == "Unknown" || country == "" {
+			populate = true
+			record, err := db.Country(ip)
+			if err == nil {
+				country = record.Country.IsoCode
+			}
+		}
 
 		if filterg(ip.String(), port, country) {
-			return &GoniffPacket{
+			if ptr == "" {
+				populate = true
+				ptr = resolveDNSName(ip)
+			}
+
+			pkt := GoniffPacket{
 				ip:      ip.String(),
 				port:    port,
 				country: country,
-				ptr:     resolveDNSName(ip),
+				ptr:     ptr,
 			}
+
+			if populate {
+				SetPacket(pkt)
+			}
+
+			return &pkt
 		}
 	}
 	return nil
