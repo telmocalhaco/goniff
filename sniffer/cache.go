@@ -35,7 +35,7 @@ func GetPacket(address string) (map[string]string, error) {
 		if found {
 			return aux.(map[string]string), nil
 		} else {
-			return nil, errors.New("Not found")
+			return nil, errors.New("not found")
 		}
 	}
 }
