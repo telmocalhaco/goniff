@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
@@ -19,11 +20,16 @@ type GoniffPacket struct {
 	port      int
 	country   string
 	ptr       string
+	ASN       string
+	ORG       string
 	direction string
 }
 
 var filterg processFilter
 var maing mainProcess
+
+var db *geoip2.Reader
+var db2 *geoip2.Reader
 
 func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
 	CacheInit(false)
@@ -31,13 +37,15 @@ func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
 	filterg = filterp
 	maing = mainp
 
-	db, err := geoip2.Open("./databases/GeoLite2-Country.mmdb")
+	dbi, err := geoip2.Open("./databases/GeoLite2-Country.mmdb")
 	_ = err
-	defer db.Close()
+	db = dbi
+	defer dbi.Close()
 
-	db2, err := geoip2.Open("./databases/GeoLite2-ASN.mmdb")
+	db2i, err := geoip2.Open("./databases/GeoLite2-ASN.mmdb")
 	_ = err
-	defer db2.Close()
+	db2 = db2i
+	defer db2i.Close()
 
 	handle, err := pcap.OpenLive(os.Args[1], 65536, true, pcap.BlockForever)
 	if err != nil {
@@ -61,23 +69,42 @@ func Sniff(network_interface string, filterp processFilter, mainp mainProcess) {
 				if tcpLayer != nil {
 					tcp, _ := tcpLayer.(*layers.TCP)
 					ip, _ := ipLayer.(*layers.IPv4)
-					go processPacketTCP(db, ip, tcp)
+					go processPacketTCP(ip, tcp)
 				}
 			case layers.LayerTypeUDP:
 				udpLayer := packet.Layer(layers.LayerTypeUDP)
 				if udpLayer != nil {
 					udp, _ := udpLayer.(*layers.UDP)
 					ip, _ := ipLayer.(*layers.IPv4)
-					go processPacketUDP(db, ip, udp)
+					go processPacketUDP(ip, udp)
 				}
 			}
 		}
 	}
 }
 
-func processPacketTCP(db *geoip2.Reader, ip *layers.IPv4, tcp *layers.TCP) {
-	src := processIP(db, ip.SrcIP, int(tcp.SrcPort))
-	dst := processIP(db, ip.DstIP, int(tcp.DstPort))
+func lookupDB(db *geoip2.Reader, ip net.IP) map[string]string {
+	output := map[string]string{
+		"country": "Unknown",
+	}
+
+	record, err := db.Country(ip)
+	if err == nil {
+		output["country"] = record.Country.IsoCode
+	}
+
+	record2, err2 := db2.ASN(ip)
+	if err2 == nil {
+		output["ASN"] = strconv.FormatUint(uint64(record2.AutonomousSystemNumber), 10)
+		output["ORG"] = record2.AutonomousSystemOrganization
+	}
+
+	return output
+}
+
+func processPacketTCP(ip *layers.IPv4, tcp *layers.TCP) {
+	src := processIP(ip.SrcIP, int(tcp.SrcPort))
+	dst := processIP(ip.DstIP, int(tcp.DstPort))
 	if src != nil || dst != nil {
 		if src == nil {
 			(*dst).direction = "OUT"
@@ -89,9 +116,9 @@ func processPacketTCP(db *geoip2.Reader, ip *layers.IPv4, tcp *layers.TCP) {
 	}
 }
 
-func processPacketUDP(db *geoip2.Reader, ip *layers.IPv4, udp *layers.UDP) {
-	src := processIP(db, ip.SrcIP, int(udp.SrcPort))
-	dst := processIP(db, ip.DstIP, int(udp.DstPort))
+func processPacketUDP(ip *layers.IPv4, udp *layers.UDP) {
+	src := processIP(ip.SrcIP, int(udp.SrcPort))
+	dst := processIP(ip.DstIP, int(udp.DstPort))
 	if src != nil || dst != nil {
 		if src == nil {
 			(*dst).direction = "OUT"
@@ -103,24 +130,28 @@ func processPacketUDP(db *geoip2.Reader, ip *layers.IPv4, udp *layers.UDP) {
 	}
 }
 
-func processIP(db *geoip2.Reader, ip net.IP, port int) *GoniffPacket {
+func processIP(ip net.IP, port int) *GoniffPacket {
 	if !isPrivateIP(ip) {
 		country := "Unknown"
 		ptr := ""
 		populate := false
+		ASN := ""
+		ORG := ""
 
 		aux, err := GetPacket(ip.String())
 		if err == nil {
 			country = aux["country"]
 			ptr = aux["ptr"]
+			ASN = aux["ASN"]
+			ORG = aux["ORG"]
 		}
 
 		if country == "Unknown" || country == "" {
 			populate = true
-			record, err := db.Country(ip)
-			if err == nil {
-				country = record.Country.IsoCode
-			}
+			aux := lookupDB(db, ip)
+			country = aux["country"]
+			ASN = aux["ASN"]
+			ORG = aux["ORG"]
 		}
 
 		if filterg(ip.String(), port, country) {
@@ -134,6 +165,8 @@ func processIP(db *geoip2.Reader, ip net.IP, port int) *GoniffPacket {
 				port:    port,
 				country: country,
 				ptr:     ptr,
+				ASN:     ASN,
+				ORG:     ORG,
 			}
 
 			if populate {

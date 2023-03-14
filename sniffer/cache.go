@@ -44,10 +44,14 @@ func SetPacket(packet GoniffPacket) {
 	if isredis {
 		rdb.HSet(ctx, packet.ip, "country", packet.country)
 		rdb.HSet(ctx, packet.ip, "ptr", packet.ptr)
+		rdb.HSet(ctx, packet.ip, "ASN", packet.ASN)
+		rdb.HSet(ctx, packet.ip, "ORG", packet.ORG)
 	} else {
 		internalcache.Set(packet.ip, map[string]string{
 			"country": packet.country,
 			"ptr":     packet.ptr,
+			"ASN":     packet.ASN,
+			"ORG":     packet.ORG,
 		}, cache.DefaultExpiration)
 	}
 }
